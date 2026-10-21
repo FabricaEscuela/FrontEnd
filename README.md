@@ -14,12 +14,11 @@ El puerto 5500 coincide con el origen permitido por CORS en los tres servicios. 
 
 - Registro y acceso JWT.
 - Feed cronológico del servicio de consultas.
-- Crear proyectos y dar like.
-- Crear discusiones, consultar una discusión por ID y marcarla resuelta.
-- Consultar y editar perfil, seguir usuarios y enviar mensajes directos.
+- Explorar y publicar proyectos; ver detalle y dar like.
+- Explorar y publicar discusiones; consultar detalle completo y resolver las propias.
+- Consultar y editar perfil, seguir usuarios y mantener conversaciones privadas.
 - Selector de tecnologías alimentado por `GET /api/v1/technologies`.
 
-La API de feed solo publica tipo, título, ID, autor y fecha. Por eso el feed presenta esos datos y abre los detalles de discusiones cuando se solicita su ID; la API actual no ofrece una vista de contenido completa ni listado de proyectos/discusiones.
+Las publicaciones recientes se consultan desde `GET /api/v1/projects` y `GET /api/v1/discussions`. Los detalles se obtienen desde `GET /api/v1/projects/{id}` y `GET /api/v1/discussions/{id}`. El historial de una conversación se consulta en `GET /api/v1/mensajes?with={userId}`; el envío existente usa `POST /api/v1/mensajes`.
 
-
-
+Si una API responde 401, el frontend cierra la sesión local y solicita iniciar sesión otra vez. El puerto 5500 debe mantenerse para coincidir con CORS.
