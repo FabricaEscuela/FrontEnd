@@ -49,7 +49,7 @@ const postCard = item => {
   const viewLabel = isDiscussion ? 'Ver discusión' : 'Ver proyecto';
   const alreadyLiked=state.likedProjectIds.has(String(id));
   const preview=item.content||item.description||(isDiscussion?'Conversación técnica de la comunidad.':'Proyecto compartido por alguien de la comunidad.');
-  return `<article class="post card"><div class="post-top"><div class="avatar">${initials(item.authorId||item.userId)}</div><div class="post-meta"><span class="post-author">${esc((item.authorId||item.userId)===state.profile?.userId?'Tú':`Dev ${String(item.authorId||item.userId||'').slice(0,8)}`)}</span><span class="post-time">${item.createdAt?new Date(item.createdAt).toLocaleString('es-CO',{dateStyle:'medium',timeStyle:'short'}):'reciente'} · ID ${esc(id)}</span></div><span class="kind ${esc(kind)}">${isDiscussion?'DISCUSSION':'PROJECT'}</span></div><h3>${esc(item.title||'Sin título')}</h3><p>${esc(preview)}</p><div class="post-actions"><button class="action" data-action="${viewAction}" data-id="${esc(id)}">↗ &nbsp;${viewLabel}</button>${!isDiscussion?`<button class="action" data-action="like" data-id="${esc(id)}" ${alreadyLiked?'disabled':''}>${alreadyLiked?'♥':'♡'} &nbsp;${alreadyLiked?'Te gusta':'Me gusta'}</button>`:''}<span>◷ &nbsp;${isDiscussion?'Debate':'Proyecto'}</span><span style="margin-left:auto">#codeforge</span></div></article>`;
+  return `<article class="post card"><div class="post-top"><div class="avatar">${initials(item.authorId||item.userId)}</div><div class="post-meta"><span class="post-author">${esc((item.authorId||item.userId)===state.profile?.userId?'Tú':`Dev ${String(item.authorId||item.userId||'').slice(0,8)}`)}</span><span class="post-time">${item.createdAt?new Date(item.createdAt).toLocaleString('es-CO',{dateStyle:'medium',timeStyle:'short'}):'reciente'} · ID ${esc(id)}</span></div><span class="kind ${esc(kind)}">${isDiscussion?'DISCUSSION':'PROJECT'}</span></div><h3>${esc(item.title||'Sin título')}</h3><p>${esc(preview)}</p><div class="post-actions"><button class="action" data-action="${viewAction}" data-id="${esc(id)}">↗ &nbsp;${viewLabel}</button>${!isDiscussion?`<button class="action ${alreadyLiked?'liked':''}" data-action="like" data-id="${esc(id)}" aria-pressed="${alreadyLiked}">${alreadyLiked?'♥':'♡'} &nbsp;Me gusta</button>`:''}<span>◷ &nbsp;${isDiscussion?'Debate':'Proyecto'}</span><span style="margin-left:auto">#codeforge</span></div></article>`;
 };
 const feedView = () => {const items=state.feed.filter(v=>state.filter==='ALL'||v.type===state.filter);return `<div class="page-head"><div><div class="eyebrow">TU ESPACIO DE TRABAJO</div><h1>${titleFor('feed')}</h1><p>Ideas, proyectos y conversaciones de los desarrolladores que sigues.</p></div><button class="btn small" data-action="refresh">↻ Actualizar</button></div><div class="compose card"><div class="avatar">${initials(fullName())}</div><button class="compose-input" data-action="new-discussion">Comparte algo con la comunidad…</button><button class="btn primary" data-action="new-project">＋ Proyecto</button></div><div class="feed-filters"><button class="filter ${state.filter==='ALL'?'active':''}" data-filter="ALL">Todo</button><button class="filter ${state.filter==='DISCUSSION'?'active':''}" data-filter="DISCUSSION">Discusiones</button><button class="filter ${state.filter==='PROJECT'?'active':''}" data-filter="PROJECT">Proyectos</button></div>${items.length?items.map(postCard).join(''):`<div class="empty card"><div class="empty-icon">⌁</div><h3>${state.feed.length?'No hay publicaciones con este filtro':'Tu feed empieza aquí'}</h3><p>${state.feed.length?'Prueba otra categoría o sigue explorando la comunidad.':'Sigue a otros desarrolladores o publica tu primer proyecto para poner en marcha la conversación.'}</p><button class="btn primary" data-page="network">Encuentra tu comunidad ↗</button></div>`}`;};
 const technologyOptions = selected => state.technologies.map(t=>`<option value="${t.id}" ${String(t.id)===String(selected)?'selected':''}>${esc(t.name)}${t.type?` · ${esc(t.type)}`:''}</option>`).join('');
@@ -70,6 +70,10 @@ const renderAuth = (register=false) => { app.innerHTML=`<div class="auth-screen"
 };
 const openModal = (title, content) => { document.body.insertAdjacentHTML('beforeend',`<div class="modal-backdrop" id="modal-backdrop"><section class="modal"><div class="modal-head"><h2>${title}</h2><button class="modal-close" data-close-modal>×</button></div>${content}</section></div>`);const backdrop=document.querySelector('#modal-backdrop');const close=()=>backdrop.remove();backdrop.querySelectorAll('[data-close-modal]').forEach(button=>button.addEventListener('click',close));backdrop.addEventListener('click',e=>{if(e.target===backdrop)close();});return close; };
 const renderConversation = messages => messages.length ? messages.map(message=>{const mine=message.remitenteId===state.profile?.userId;const sentAt=message.fechaEnvio?new Date(message.fechaEnvio).toLocaleString('es-CO',{dateStyle:'short',timeStyle:'short'}):'';return `<div style="max-width:85%;margin:${mine?'8px 0 8px auto':'8px auto 8px 0'};padding:12px 14px;border-radius:14px;background:${mine?'#283420':'#171d26'};white-space:pre-wrap;overflow-wrap:anywhere"><div>${esc(message.contenido)}</div><small class="helper">${mine?'Tú':'Desarrollador'} · ${esc(sentAt)}</small></div>`;}).join('') : '<p class="helper">Todavía no hay mensajes. Inicia la conversación.</p>';
+const renderProjectComments = comments => comments.length ? comments.map(comment=>{
+ const createdAt=comment.fechaCreacion?new Date(comment.fechaCreacion).toLocaleString('es-CO',{dateStyle:'medium',timeStyle:'short'}):'Fecha no disponible';
+ return `<article class="project-comment"><div class="project-comment-meta"><strong>${esc(comment.username||'Desarrollador')}</strong><time>${esc(createdAt)}</time></div><p>${esc(comment.comentario||'')}</p></article>`;
+}).join('') : '<p class="helper comment-empty">Sé la primera persona en comentar este proyecto.</p>';
 const openConversation = async (userId,name) => {
  const closeLoading=openModal(`Conversación con ${esc(name)}`,'<div class="loading">Cargando mensajes…</div>');
  try {
@@ -87,11 +91,12 @@ const bind = () => {
   if(action==='new-project'||action==='new-discussion'){state.page=action==='new-project'?'projects':'discussions';state.composing=true;render();}
   if(action==='cancel-form'){state.composing=false;render();}
   if(action==='refresh'){el.disabled=true;await loadBase();render();toast(state.loadErrors.length?'Actualización incompleta; revisa el aviso de conexión.':'Contenido actualizado');}
-  if(action==='like'){try{const result=await api('admin',`/api/v1/projects/${id}/likes`,{method:'POST'});state.likedProjectIds.add(String(id));render();toast(`Te gusta este proyecto · ${result.likesCount} likes`);}catch(err){toast(err.message,true);}}
+  if(action==='like'){const wasLiked=state.likedProjectIds.has(String(id));el.disabled=true;try{const result=await api('admin',`/api/v1/projects/${id}/likes`,{method:wasLiked?'DELETE':'POST'});if(result.liked)state.likedProjectIds.add(String(id));else state.likedProjectIds.delete(String(id));render();toast(result.liked?`Te gusta este proyecto · ${result.likesCount} likes`:`Quitaste tu Me gusta · ${result.likesCount} likes`);}catch(err){el.disabled=false;toast(err.message,true);}}
   if(action==='open-project'){
     const close=openModal('Cargando proyecto…','<div class="loading">Consultando la API de administración…</div>');
     try {
       const project=await api('admin',`/api/v1/projects/${id}`);
+      const comments=await api('admin',`/api/v1/projects/${id}/comments`);
       close();
       const technologies=(project.technologies||[]).map(name=>`<span class="tag">${esc(name)}</span>`).join('');
       let safeRepository=null;
@@ -102,7 +107,31 @@ const bind = () => {
       } catch {}
       const repositoryLink=safeRepository?`<a class="btn small" href="${esc(safeRepository)}" target="_blank" rel="noopener noreferrer">Abrir repositorio ↗</a>`:'';
       const createdAt=project.createdAt?new Date(project.createdAt).toLocaleString('es-CO',{dateStyle:'medium',timeStyle:'short'}):'Fecha no disponible';
-      openModal(esc(project.title),`<div class="post-top"><span class="tag">PROYECTO #${esc(project.id)}</span><span class="post-time">${esc(createdAt)}</span></div><p style="margin:18px 0;white-space:pre-wrap;color:#c1c8d2;line-height:1.7">${esc(project.description||'Sin descripción')}</p><div class="skill-list">${technologies||'<span class="helper">Sin tecnologías especificadas</span>'}</div><div class="form-actions" style="justify-content:space-between"><span class="post-time">Publicado por ${esc(project.userId||'Desarrollador')}</span>${repositoryLink}</div>`);
+      const isAuthor=project.userId===state.profile?.userId;
+      const authorMessageButton=project.userId&&state.profile?.userId&&!isAuthor?`<button class="btn small" type="button" id="message-project-author">Mensaje al autor ↗</button>`:'';
+      const closeProject=openModal(esc(project.title),`<div class="post-top"><span class="tag">PROYECTO #${esc(project.id)}</span><span class="post-time">${esc(createdAt)}</span></div><p class="project-description">${esc(project.description||'Sin descripción')}</p><div class="skill-list">${technologies||'<span class="helper">Sin tecnologías especificadas</span>'}</div><div class="form-actions project-actions"><span class="post-time">Publicado por ${esc(project.userId||'Desarrollador')}</span><div class="project-action-buttons">${authorMessageButton}${repositoryLink}</div></div><section class="project-comments"><div class="project-comments-heading"><div><div class="eyebrow">CONVERSACIÓN</div><h3>Comentarios <span class="badge" id="comment-count">${comments.length}</span></h3></div><span class="helper">Comparte una idea o pregunta</span></div><div class="project-comment-list" id="project-comment-list">${renderProjectComments(comments)}</div><form id="project-comment-form"><div class="field"><label for="project-comment-input">Añadir comentario</label><textarea id="project-comment-input" name="comentario" maxlength="1000" required placeholder="¿Qué te parece este proyecto?"></textarea></div><div class="form-actions"><span class="helper" id="comment-char-count">0 / 1000</span><button class="btn primary" type="submit">Publicar comentario ↗</button></div></form></section>`);
+      const projectModal=document.querySelector('#modal-backdrop');
+      projectModal.querySelector('#message-project-author')?.addEventListener('click',()=>{closeProject();openConversation(project.userId,`autor de ${project.title}`);});
+      const commentForm=projectModal.querySelector('#project-comment-form');
+      const commentInput=commentForm.querySelector('textarea');
+      commentInput.addEventListener('input',()=>{projectModal.querySelector('#comment-char-count').textContent=`${commentInput.value.length} / 1000`;});
+      commentForm.addEventListener('submit',async event=>{
+        event.preventDefault();
+        const comentario=commentInput.value.trim();
+        if(!comentario)return;
+        const submitButton=commentForm.querySelector('button[type="submit"]');
+        submitButton.disabled=true;
+        try {
+          await api('admin',`/api/v1/projects/${id}/comments`,{method:'POST',body:JSON.stringify({comentario})});
+          const updatedComments=await api('admin',`/api/v1/projects/${id}/comments`);
+          projectModal.querySelector('#project-comment-list').innerHTML=renderProjectComments(updatedComments);
+          projectModal.querySelector('#comment-count').textContent=updatedComments.length;
+          commentInput.value='';
+          projectModal.querySelector('#comment-char-count').textContent='0 / 1000';
+          toast('Comentario publicado');
+        } catch(err) { toast(err.message,true); }
+        finally { submitButton.disabled=false; }
+      });
     } catch(err) { close(); toast(err.message,true); }
   }
    if(action==='open-discussion'){const close=openModal('Cargando discusión…','<div class="loading">Consultando la API de administración…</div>');try{const d=await api('admin',`/api/v1/discussions/${id}`);close();const canResolve=d.userId===state.profile?.userId&&d.status==='OPEN';openModal(esc(d.title),`<div class="discussion-detail"><div class="discussion-detail-meta post-top"><span class="kind DISCUSSION">${esc(d.status||'OPEN')}</span><span class="post-time">ID ${esc(d.id)} · Tecnología ${esc(d.technologyId||'')}</span></div><p class="discussion-detail-content">${esc(d.content||'')}</p></div>${canResolve?`<div class="form-actions"><button class="btn primary" id="resolve-discussion" data-id="${esc(d.id)}">✓ Marcar resuelta</button></div>`:''}`);document.querySelector('#resolve-discussion')?.addEventListener('click',async()=>{try{await api('admin',`/api/v1/discussions/${id}/resolve`,{method:'PATCH'});state.composing=false;await loadBase();render();toast('Discusión marcada como resuelta');}catch(err){toast(err.message,true);}});}catch(err){close();toast(err.message,true);}}
