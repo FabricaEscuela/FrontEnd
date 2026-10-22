@@ -3,4 +3,4 @@
 const local = ['localhost', '127.0.0.1'].includes(window.location.hostname);
 window.CODEFORGE_API = local
   ? { admin: 'http://localhost:8080', auth: 'http://localhost:8081', queries: 'http://localhost:8082' }
-  : { admin: 'RELLENAR_URL_ADMINISTRACION', auth: 'RELLENAR_URL_AUTENTICACION', queries: 'RELLENAR_URL_CONSULTAS' };
+  : { admin: 'https://codeforge-administracion.onrender.com', auth: 'https://codeforge-autenticacion.onrender.com', queries: 'https://codeforge-consultas.onrender.com' };
