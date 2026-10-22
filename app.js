@@ -1,4 +1,4 @@
-const API = { admin: 'http://localhost:8080', auth: 'http://localhost:8081', queries: 'http://localhost:8082' };
+const API = window.CODEFORGE_API;
 const state = { token: localStorage.getItem('cf_token'), email: localStorage.getItem('cf_email'), page: 'feed', feed: [], projects: [], discussions: [], profile: null, following: [], technologies: [], likedProjectIds: new Set(), loadErrors: [], composing: false, filter: 'ALL' };
 const app = document.querySelector('#app');
 const esc = (value='') => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
