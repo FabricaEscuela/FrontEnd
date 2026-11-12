@@ -82,7 +82,7 @@ const openModal = (title, content) => { document.body.insertAdjacentHTML('before
 const renderConversation = messages => messages.length ? messages.map(message=>{const mine=message.remitenteId===state.profile?.userId;const sentAt=message.fechaEnvio?new Date(message.fechaEnvio).toLocaleString('es-CO',{dateStyle:'short',timeStyle:'short'}):'';return `<div style="max-width:85%;margin:${mine?'8px 0 8px auto':'8px auto 8px 0'};padding:12px 14px;border-radius:14px;background:${mine?'#283420':'#171d26'};white-space:pre-wrap;overflow-wrap:anywhere"><div>${esc(message.contenido)}</div><small class="helper">${mine?'Tú':'Desarrollador'} · ${esc(sentAt)}</small></div>`;}).join('') : '<p class="helper">Todavía no hay mensajes. Inicia la conversación.</p>';
 const renderProjectComments = comments => comments.length ? comments.map(comment=>{
  const createdAt=comment.fechaCreacion?new Date(comment.fechaCreacion).toLocaleString('es-CO',{dateStyle:'medium',timeStyle:'short'}):'Fecha no disponible';
- return `<article class="project-comment"><div class="project-comment-meta"><strong>${esc(comment.username||'Desarrollador')}</strong><time>${esc(createdAt)}</time></div><p>${esc(comment.comentario||'')}</p></article>`;
+ return `<article class="project-comment"><div class="project-comment-meta"><strong>${esc(comment.username||'Desarrollador')}</strong><time>${esc(createdAt)}</time></div><p>${esc(comment.comentario||'')}</p><div class="comment-actions"><button type="button" class="comment-vote${comment.votadoPorMi?' voted':''}" data-comment-id="${esc(comment.id)}" aria-pressed="${comment.votadoPorMi?'true':'false'}" title="Votar comentario">▲ <span class="comment-vote-count">${comment.votos||0}</span></button></div></article>`;
 }).join('') : '<p class="helper comment-empty">Sé la primera persona en comentar este proyecto.</p>';
 const openConversation = async (userId,name) => {
  const closeLoading=openModal(`Conversación con ${esc(name)}`,'<div class="loading">Cargando mensajes…</div>');
@@ -124,7 +124,7 @@ const bind = () => {
       projectModal.querySelector('#message-project-author')?.addEventListener('click',()=>{closeProject();openConversation(project.userId,`autor de ${project.title}`);});
       const commentForm=projectModal.querySelector('#project-comment-form');
       const commentInput=commentForm.querySelector('textarea');
-      commentInput.addEventListener('input',()=>{projectModal.querySelector('#comment-char-count').textContent=`${commentInput.value.length} / 1000`;});
+      commentInput.addEventListener('input',()=>{projectModal.querySelector('#comment-char-count').textContent=`${commentInput.value.length} / 1000`;});projectModal.querySelector('#project-comment-list').addEventListener('click',async event=>{const voteButton=event.target.closest('.comment-vote');if(!voteButton)return;voteButton.disabled=true;try{const result=await api('admin',`/api/v1/projects/${id}/comments/${voteButton.dataset.commentId}/votes`,{method:'POST'});voteButton.classList.toggle('voted',result.votadoPorMi);voteButton.setAttribute('aria-pressed',result.votadoPorMi?'true':'false');voteButton.querySelector('.comment-vote-count').textContent=result.votos;toast(result.mensaje);}catch(err){toast(err.message,true);}finally{voteButton.disabled=false;}});
       commentForm.addEventListener('submit',async event=>{
         event.preventDefault();
         const comentario=commentInput.value.trim();
