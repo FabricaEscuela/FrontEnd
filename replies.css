@@ -1,0 +1,9 @@
+/* HU014 - respuestas a comentarios (hilos) */
+.reply-actions{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
+.reply-actions .btn{padding:4px 10px;font-size:10px}
+.reply-thread{display:grid;gap:7px;margin:9px 0 0 14px;padding-left:12px;border-left:2px solid #252d38}
+.comment-reply{padding:8px 10px;border:1px solid #252d38;background:#0b1017;border-radius:8px}
+.comment-reply p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;color:#aeb8c5;font-size:12px;line-height:1.5}
+.reply-form{display:grid;gap:7px;margin-top:9px}
+.reply-form textarea{min-height:64px;width:100%}
+.reply-error{color:#ff8a8a}
