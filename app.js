@@ -1,5 +1,7 @@
+import { createBloqueosApi } from './services/bloqueos.js';
+
 const API = window.CODEFORGE_API;
-const state = { token: localStorage.getItem('cf_token'), email: localStorage.getItem('cf_email'), page: 'feed', feed: [], projects: [], discussions: [], profile: null, following: [], technologies: [], likedProjectIds: new Set(), loadErrors: [], composing: false, filter: 'ALL' };
+const state = { token: localStorage.getItem('cf_token'), email: localStorage.getItem('cf_email'), page: 'feed', feed: [], projects: [], discussions: [], profile: null, following: [], technologies: [], likedProjectIds: new Set(), loadErrors: [], composing: false, filter: 'ALL', blocked: [] };
 const app = document.querySelector('#app');
 const esc = (value='') => String(value).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const initials = value => (value || 'CF').split(/[\s@._-]+/).filter(Boolean).slice(0,2).map(s=>s[0]).join('').toUpperCase();
@@ -19,14 +21,18 @@ const api = async (service, path, options={}) => {
   const text = await response.text(); let data;
   try { data = text ? JSON.parse(text) : null; } catch { data = text; }
   if (!response.ok) {
+    // El mensaje del backend SIEMPRE tiene prioridad (incluidos 401/403) para no ocultar
+    // los textos exactos de negocio (p. ej. bloqueos). Los textos fijos son solo fallback.
     const message = data?.message || data?.error || data?.detail || data?.mensaje;
-    if(response.status===401&&hadSession){logout(false);throw new Error('Tu sesión venció o ya no es válida. Inicia sesión de nuevo.');}
+    if(response.status===401&&hadSession){logout(false);throw new Error(message||'Tu sesión venció o ya no es válida. Inicia sesión de nuevo.');}
     if(response.status===401)throw new Error(message||'Correo o contraseña incorrectos.');
     if(response.status===403)throw new Error(message || 'No tienes permiso para realizar esta acción. Si acabas de iniciar sesión, vuelve a entrar y reintenta.');
     throw new Error(message || `La API respondió ${response.status}.`);
   }
   return data;
 };
+// Cliente de bloqueos instanciado una sola vez con el wrapper `api` (inyección de dependencia).
+const bloqueosApi = createBloqueosApi(api);
 const toast = (message, error=false) => { const el=document.querySelector('#toast'); el.textContent=message; el.className=`toast show${error?' error':''}`; clearTimeout(toast.timer); toast.timer=setTimeout(()=>el.className='toast',2600); };
 const logout = (notify=true) => { state.token=null;state.email=null;state.profile=null;localStorage.removeItem('cf_token');localStorage.removeItem('cf_email'); if(notify)toast('Sesión cerrada');render(); };
 const fullName = () => state.profile ? `${state.profile.nombre || ''} ${state.profile.apellidos || ''}`.trim() : state.email || 'Desarrollador';
@@ -40,11 +46,28 @@ const loadBase = async () => {
     load('Perfil','profile',()=>api('admin','/api/v1/profile'),null),
     load('Red','following',()=>api('admin','/api/v1/following'),[]),
     load('Tecnologías','technologies',()=>api('admin','/api/v1/technologies'),[]),
-    load('Likes','likedProjectIds',async()=>new Set((await api('admin','/api/v1/projects/likes/me')).map(item=>String(item.projectId))),new Set())
+    load('Likes','likedProjectIds',async()=>new Set((await api('admin','/api/v1/projects/likes/me')).map(item=>String(item.projectId))),new Set()),
+    load('Bloqueados','blocked',async()=>((await bloqueosApi.listar())||[]),[])
   ]);
 };
-const navItems = [['feed','◫','Feed'],['projects','⌘','Proyectos'],['discussions','◌','Discusiones'],['profile','◉','Mi perfil'],['network','◎','Red']];
-const titleFor = p => ({feed:'Tu comunidad, en tiempo real',projects:'Proyectos',discussions:'Discusiones técnicas',profile:'Tu perfil de desarrollador',network:'Tu red de desarrolladores'}[p] || 'CodeForge');
+// Re-consulta los bloqueos contra el backend (fuente de verdad). No se cachea en localStorage.
+const refreshBlocked = async () => {
+  try { state.blocked = (await bloqueosApi.listar()) || []; return true; }
+  catch(err) { toast(err.message,true); return false; }
+};
+const navItems = [['feed','◫','Feed'],['projects','⌘','Proyectos'],['discussions','◌','Discusiones'],['profile','◉','Mi perfil'],['network','◎','Red'],['blocked','⊘','Bloqueados']];
+const titleFor = p => ({feed:'Tu comunidad, en tiempo real',projects:'Proyectos',discussions:'Discusiones técnicas',profile:'Tu perfil de desarrollador',network:'Tu red de desarrolladores',blocked:'Usuarios bloqueados'}[p] || 'CodeForge');
+// --- HU 019 · Bloqueos: helpers de presentación (sin URLs; las llamadas viven en services/bloqueos.js) ---
+const isBlocked = userId => Boolean(userId) && state.blocked.some(item=>String(item.usuarioId)===String(userId));
+const isSelf = userId => Boolean(userId) && Boolean(state.profile?.userId) && String(userId)===String(state.profile.userId);
+// Acción Bloquear/Desbloquear reutilizable (red y modal de chat). Nunca se muestra sobre uno mismo.
+const blockButton = (userId,name) => {
+  if(!userId||isSelf(userId))return '';
+  const label=name||'este usuario';
+  return isBlocked(userId)
+    ? `<button class="btn small danger" data-action="unblock" data-id="${esc(userId)}" data-name="${esc(label)}">Desbloquear</button>`
+    : `<button class="btn small danger" data-action="block" data-id="${esc(userId)}" data-name="${esc(label)}">Bloquear</button>`;
+};
 const sideNav = () => `<div class="side-label">ESPACIO DE TRABAJO</div><div class="side-nav">${navItems.map(([id,icon,label])=>`<button data-page="${id}" class="${state.page===id?'active':''}"><span class="ico">${icon}</span>${label}</button>`).join('')}</div><div class="side-divider"></div><div class="side-card"><div class="eyebrow">BUILD TOGETHER</div><strong>El código conecta.</strong><p>Comparte tus ideas, encuentra colaboradores y construye algo extraordinario.</p><button class="btn primary small" data-action="new-project">＋ Publicar proyecto</button></div>`;
 const rightRail = () => `<aside class="right"><section class="section-card card"><div class="eyebrow">COMUNIDAD</div><h2 style="margin-top:8px">En tendencia <span style="color:var(--lime)">↗</span></h2>${['#frontend','#opensource','#java','#devlife'].map((tag,i)=>`<div class="trend"><span class="trend-num">0${i+1}</span><div><strong>${tag}</strong><small>${[248,186,142,98][i]} publicaciones</small></div><span class="trend-dot"></span></div>`).join('')}</section><section class="section-card card"><div class="eyebrow">TU RED · ${state.following.length} SIGUIENDO</div><h2 style="margin-top:8px">Desarrolladores</h2>${state.following.length?state.following.slice(0,4).map(u=>`<div class="online"><div class="avatar">${initials(u.username||u.fullName)}</div><div><strong>${esc(u.username||u.fullName||'Developer')}</strong><small>${esc(u.fullName||'CodeForge member')}</small></div><i></i></div>`).join(''):`<p>Aún no sigues a nadie. Encuentra desarrolladores para personalizar tu feed.</p>`}<button class="btn small" data-page="network" style="margin-top:10px">Explorar red ↗</button></section><div class="eyebrow" style="padding:4px 3px">CODEFORGE <span style="color:#4c5664">·</span> HECHO PARA CREADORES</div></aside>`;
 const header = () => `<header class="topbar"><a class="brand" href="#" data-page="feed"><span class="brand-mark">&lt;/&gt;</span><span>CodeForge<small>DEV COMMUNITY</small></span></a><nav class="nav">${navItems.slice(0,4).map(([id,,label])=>`<button data-page="${id}" class="${state.page===id?'active':''}">${label}</button>`).join('')}</nav><div class="top-actions"><span class="search-pill">⌕ &nbsp; comunidad</span><button class="user-pill" data-page="profile" style="border:0;background:none"><span class="avatar">${initials(fullName())}</span><span>${esc((fullName().split(' ')[0]||state.email||'Dev'))}</span></button><button class="btn ghost small" data-action="logout" title="Cerrar sesión">↪ <span>Cerrar sesión</span></button></div></header>`;
@@ -66,11 +89,12 @@ const technologyOptions = selected => state.technologies.map(t=>`<option value="
 const collectionView = p => {if(state.composing)return formPage(p);const isProject=p==='projects';const source=isProject?state.projects:state.discussions;const cards=source.map(item=>postCard({...item,sourceId:item.id,authorId:item.userId,type:isProject?'PROJECT':'DISCUSSION'})).join('');return `<div class="page-head"><div><div class="eyebrow">CODEFORGE / ${p.toUpperCase()}</div><h1>${titleFor(p)}</h1><p>${isProject?'Explora lo que la comunidad está construyendo.':'Lee preguntas y comparte lo que sabes.'}</p></div><button class="btn primary" data-action="new-${isProject?'project':'discussion'}">＋ Publicar ${isProject?'proyecto':'discusión'}</button></div>${cards||`<div class="empty card"><div class="empty-icon">⌁</div><h3>${isProject?'Todavía no hay proyectos':'Todavía no hay discusiones'}</h3><p>${isProject?'Sé la primera persona en compartir lo que estás construyendo.':'Abre la primera conversación técnica de la comunidad.'}</p><button class="btn primary" data-action="new-${isProject?'project':'discussion'}">＋ Publicar ahora</button></div>`}`;};
 const formPage = (p) => `<div class="page-head"><div><div class="eyebrow">CODEFORGE / ${p.toUpperCase()}</div><h1>${titleFor(p)}</h1><p>${p==='projects'?'Muestra lo que estás construyendo.':'Abre una conversación que ayude a la comunidad.'}</p></div></div><section class="section-card card"><form id="${p}-form"><div class="form-grid"><div class="field full"><label>Título</label><input name="title" required maxlength="${p==='projects'?50:150}" placeholder="${p==='projects'?'Un nombre que cuente la idea':'¿Qué problema estás resolviendo?'}" /></div>${p==='projects'?`<div class="field full"><label>Descripción</label><textarea name="description" required maxlength="250" placeholder="Qué hace tu proyecto, cómo funciona y qué lo hace especial…"></textarea><span class="helper">Máximo 250 caracteres.</span></div><div class="field full"><label>Repositorio</label><input name="repositoryUrl" type="url" placeholder="https://github.com/usuario/proyecto"/><span class="helper">GitHub, GitLab o Bitbucket.</span></div><div class="field full"><label>Tecnologías</label><select name="technologyIds" multiple required size="5">${technologyOptions('')}</select><span class="helper">Usa Ctrl o ⌘ para elegir varias. Si el catálogo no está configurado, revisa el README del frontend.</span></div>`:`<div class="field full"><label>Descripción de la discusión</label><textarea name="content" required placeholder="Da contexto, explica lo que probaste y añade detalles técnicos…"></textarea></div><div class="field"><label>Tecnología</label><select name="technologyId" required><option value="">Selecciona tecnología</option>${technologyOptions('')}</select></div>`}</div><div class="form-actions"><button class="btn" type="button" data-action="cancel-form">Cancelar</button><button class="btn primary" type="submit">Publicar ${p==='projects'?'proyecto':'discusión'} ↗</button></div></form></section>`;
 const profileView = () => { const p=state.profile||{}; const links=p.externalLinks||[];const link=(...names)=>links.find(l=>names.some(name=>(l.name||'').toLowerCase().includes(name)))?.url||'';return `<div class="page-head"><div><div class="eyebrow">IDENTIDAD PROFESIONAL</div><h1>${titleFor('profile')}</h1><p>Presenta tus habilidades y conecta tus perfiles.</p></div></div><div class="profile-hero card"><div class="avatar">${initials(fullName())}</div><div style="flex:1"><h2>${esc(fullName())}</h2>${p.username? ("<p class=\"profile-username\">@"+esc(p.username)+"</p>") : ""}<p>${esc(p.email||state.email||'')} · ${esc(p.level||'Desarrollador')}</p></div><span class="badge">${esc(p.yearsOfExperience??0)} AÑOS EXP.</span></div><section class="section-card card"><form id="profile-form"><div class="form-grid"><div class="field"><label>GitHub</label><input name="githubLink" type="url" value="${esc(link('github'))}" placeholder="https://github.com/usuario" /></div><div class="field"><label>LinkedIn</label><input name="linkedinLink" type="url" value="${esc(link('linkedin'))}" placeholder="https://linkedin.com/in/usuario" /></div><div class="field full"><label>Portafolio</label><input name="portfolioLink" type="url" value="${esc(link('portfolio','portafolio'))}" placeholder="https://tusitio.dev" /></div><div class="field"><label>Años de experiencia</label><input name="yearsOfExperience" type="number" min="0" max="20" value="${esc(p.yearsOfExperience??0)}" /></div><div class="field"><label>Nivel</label><select name="level">${['ENTRY','JUNIOR','MID','SENIOR'].map(x=>`<option ${p.level===x?'selected':''}>${x}</option>`).join('')}</select></div><div class="field full"><label>Habilidades</label><input name="skills" value="${esc((p.skills||[]).join(', '))}" placeholder="Java, Spring Boot, React" /><span class="helper">Separa tus habilidades con comas.</span></div></div><div class="form-actions"><button class="btn primary" type="submit">Guardar perfil ↗</button></div></form></section><section class="section-card card"><div class="eyebrow">TUS HABILIDADES</div><div class="skill-list" style="margin-top:13px">${(p.skills||[]).length?p.skills.map(s=>`<span class="tag">${esc(s)}</span>`).join(''):'<span class="helper">Añade habilidades a tu perfil para que la comunidad te encuentre.</span>'}</div></section>`; };
-const networkView = () => `<div class="page-head"><div><div class="eyebrow">CONECTA Y COLABORA</div><h1>${titleFor('network')}</h1><p>Encuentra a quienes construyen cosas parecidas a ti.</p></div></div><section class="section-card card"><form id="follow-form" class="compose" style="padding:0;margin:0;border:0;background:transparent"><input class="compose-input" name="target" required placeholder="Nombre de usuario o correo" /><button class="btn primary" type="submit">＋ Seguir</button></form></section><section class="section-card card"><h2>Personas que sigues <span class="badge">${state.following.length}</span></h2>${state.following.length?state.following.map(u=>`<div class="online"><div class="avatar">${initials(u.username||u.fullName)}</div><div style="flex:1"><strong>${esc(u.username||'Developer')}</strong><small>${esc(u.fullName||u.email||'CodeForge member')}</small></div><button class="btn small" data-action="message" data-id="${esc(u.id||u.userId)}" data-name="${esc(u.username||u.fullName||'Developer')}">Mensaje</button></div>`).join(''):`<p>Aún no sigues a nadie. Agrega un usuario o correo arriba para personalizar tu feed.</p>`}</section>`;
+const networkView = () => `<div class="page-head"><div><div class="eyebrow">CONECTA Y COLABORA</div><h1>${titleFor('network')}</h1><p>Encuentra a quienes construyen cosas parecidas a ti.</p></div></div><section class="section-card card"><form id="follow-form" class="compose" style="padding:0;margin:0;border:0;background:transparent"><input class="compose-input" name="target" required placeholder="Nombre de usuario o correo" /><button class="btn primary" type="submit">＋ Seguir</button></form></section><section class="section-card card"><h2>Personas que sigues <span class="badge">${state.following.length}</span></h2>${state.following.length?state.following.map(u=>`<div class="online"><div class="avatar">${initials(u.username||u.fullName)}</div><div style="flex:1"><strong>${esc(u.username||'Developer')}</strong><small>${esc(u.fullName||u.email||'CodeForge member')}</small></div><div class="row-actions"><button class="btn small" data-action="message" data-id="${esc(u.id||u.userId)}" data-name="${esc(u.username||u.fullName||'Developer')}">Mensaje</button>${blockButton(u.id||u.userId,u.username||u.fullName||'Developer')}</div></div>`).join(''):`<p>Aún no sigues a nadie. Agrega un usuario o correo arriba para personalizar tu feed.</p>`}</section>`;
+const blockedView = () => `<div class="page-head"><div><div class="eyebrow">PRIVACIDAD Y CONTROL</div><h1>${titleFor('blocked')}</h1><p>Estas personas no pueden enviarte mensajes ni iniciar conversaciones contigo.</p></div><button class="btn small" data-action="refresh-blocked">↻ Actualizar</button></div><section class="section-card card"><h2>Usuarios bloqueados <span class="badge">${state.blocked.length}</span></h2>${state.blocked.length?`<div class="blocked-list">${state.blocked.map(u=>`<div class="blocked-row"><div class="avatar">${initials(u.nombre||u.username)}</div><div class="blocked-info"><strong>${esc(u.nombre||'Desarrollador')}</strong><small>${u.username?'@'+esc(u.username):'Sin usuario'}</small></div><button class="btn small danger" data-action="unblock" data-id="${esc(u.usuarioId)}" data-name="${esc(u.nombre||u.username||'este usuario')}">Desbloquear</button></div>`).join('')}</div>`:`<div class="empty blocked-empty"><div class="empty-icon">⊘</div><h3>No tienes usuarios bloqueados</h3><p>Cuando bloquees a alguien aparecerá aquí y podrás desbloquearlo cuando quieras.</p></div>`}</section>`;
 const integrationNotice = () => state.loadErrors.length ? `<div class="card" style="padding:14px 18px;margin-bottom:16px;border-color:#75494b;color:#ffb5b5"><strong>Algunas APIs no respondieron.</strong><div class="helper" style="margin-top:6px">${state.loadErrors.map(esc).join('<br>')}</div></div>` : '';
 const render = () => {
  if(!state.token){renderAuth();return;}
- const views={feed:feedView,projects:()=>collectionView('projects'),discussions:()=>collectionView('discussions'),profile:profileView,network:networkView};
+ const views={feed:feedView,projects:()=>collectionView('projects'),discussions:()=>collectionView('discussions'),profile:profileView,network:networkView,blocked:blockedView};
  app.innerHTML=`<div class="shell">${header()}<div class="layout"><aside class="side">${sideNav()}</aside><main class="main">${integrationNotice()}${(views[state.page]||feedView)()}</main>${rightRail()}</div><nav class="mobile-nav">${navItems.map(([id,icon,label])=>`<button data-page="${id}" class="${state.page===id?'active':''}"><span class="ico">${icon}</span>${label}</button>`).join('')}</nav></div>`;
  bind();
 };
@@ -85,19 +109,55 @@ const renderProjectComments = comments => comments.length ? comments.map(comment
  return `<article class="project-comment"><div class="project-comment-meta"><strong>${esc(comment.username||'Desarrollador')}</strong><time>${esc(createdAt)}</time></div><p>${esc(comment.comentario||'')}</p><div class="comment-actions"><button type="button" class="comment-vote${comment.votadoPorMi?' voted':''}" data-comment-id="${esc(comment.id)}" aria-pressed="${comment.votadoPorMi?'true':'false'}" title="Votar comentario">▲ <span class="comment-vote-count">${comment.votos||0}</span></button></div></article>`;
 }).join('') : '<p class="helper comment-empty">Sé la primera persona en comentar este proyecto.</p>';
 const openConversation = async (userId,name) => {
- const closeLoading=openModal(`Conversación con ${esc(name)}`,'<div class="loading">Cargando mensajes…</div>');
+ const displayName=name||'desarrollador';
+ if(!userId){toast('No se pudo identificar al usuario',true);return;}
+ // Escenario 9: el backend decide si se puede iniciar la conversación (403 si hay bloqueo).
+ try { await bloqueosApi.iniciarConversacion(userId); }
+ catch(err) { toast(err.message,true); return; }
+ const closeLoading=openModal(`Conversación con ${esc(displayName)}`,'<div class="loading">Cargando mensajes…</div>');
  try {
   let messages=await api('admin',`/api/v1/mensajes?with=${encodeURIComponent(userId)}`);closeLoading();
-   const close=openModal(`Conversación con ${esc(name)}`,`<div id="conversation-history" style="max-height:48vh;overflow:auto;margin-bottom:18px">${renderConversation(messages)}</div><form id="message-form"><div class="field"><label>Mensaje privado</label><textarea name="contenido" maxlength="2000" required placeholder="Escribe tu mensaje…"></textarea><span class="helper" id="char-count">0 / 2000</span></div><div class="form-actions"><button class="btn primary">Enviar ↗</button></div></form>`);
+   const close=openModal(`Conversación con ${esc(displayName)}`,`<div class="conversation-toolbar" data-conversation-actions data-user-id="${esc(userId)}" data-name="${esc(displayName)}">${blockButton(userId,displayName)}</div><div id="conversation-history" style="max-height:48vh;overflow:auto;margin-bottom:18px">${renderConversation(messages)}</div><form id="message-form"><div class="field"><label>Mensaje privado</label><textarea name="contenido" maxlength="2000" required placeholder="Escribe tu mensaje…"></textarea><span class="helper" id="char-count">0 / 2000</span></div><div class="form-actions"><button class="btn primary">Enviar ↗</button></div></form>`);
   const textarea=document.querySelector('#message-form textarea');textarea.oninput=()=>document.querySelector('#char-count').textContent=`${textarea.value.length} / 2000`;
   document.querySelector('#message-form').onsubmit=async event=>{event.preventDefault();const contenido=textarea.value.trim();if(!contenido)return;try{await api('admin','/api/v1/mensajes',{method:'POST',body:JSON.stringify({destinatarioId:userId,contenido})});messages=await api('admin',`/api/v1/mensajes?with=${encodeURIComponent(userId)}`);document.querySelector('#conversation-history').innerHTML=renderConversation(messages);textarea.value='';document.querySelector('#char-count').textContent='0 / 2000';document.querySelector('#conversation-history').scrollTop=document.querySelector('#conversation-history').scrollHeight;toast('Mensaje enviado');}catch(err){toast(err.message,true);}};
  } catch(err){closeLoading();toast(err.message,true);}
 };
+// Refresca el botón del modal de chat abierto sin cerrarlo (el historial se conserva intacto).
+const syncConversationToolbars = (userId,name) => document.querySelectorAll('[data-conversation-actions]').forEach(container=>{ if(String(container.dataset.userId)===String(userId)) container.innerHTML=blockButton(userId,name); });
+// Acción Bloquear/Desbloquear compartida por la red, la sección de bloqueados y el modal de chat.
+// CRÍTICO: si el botón vive en el modal de chat NO se repinta la app (render() reemplaza el DOM y
+// destruiría el modal con el historial). En ese caso solo se sincroniza el botón del modal.
+const handleBlockToggle = async button => {
+ const action=button.dataset.action,userId=button.dataset.id,name=button.dataset.name||'este usuario';
+ if(!userId)return;
+ if(action==='block'&&isSelf(userId)){toast('No puedes bloquear tu propio usuario',true);return;}
+ const enModal=Boolean(button.closest('[data-conversation-actions]'));
+ button.disabled=true;
+ try {
+  if(action==='block'){
+   const data=await bloqueosApi.bloquear(userId);
+   const refreshed=await refreshBlocked();
+   if(!refreshed&&!isBlocked(userId))state.blocked=[...state.blocked,{usuarioId:userId,nombre:name,username:''}];
+   if(enModal)syncConversationToolbars(userId,name);else render();
+   toast(data?.mensaje||'Usuario bloqueado exitosamente');
+  } else {
+   const data=await bloqueosApi.desbloquear(userId);
+   const refreshed=await refreshBlocked();
+   if(!refreshed)state.blocked=state.blocked.filter(item=>String(item.usuarioId)!==String(userId));
+   if(enModal)syncConversationToolbars(userId,name);else render();
+   toast(data?.mensaje||'Usuario desbloqueado exitosamente');
+  }
+ } catch(err) {
+  button.disabled=false;
+  toast(err.message,true);
+ }
+};
 const bind = () => {
- document.querySelectorAll('[data-page]').forEach(el=>el.addEventListener('click',()=>{state.page=el.dataset.page;state.composing=false;render();}));
+ document.querySelectorAll('[data-page]').forEach(el=>el.addEventListener('click',async()=>{state.page=el.dataset.page;state.composing=false;if(state.page==='blocked')await refreshBlocked();render();}));
  document.querySelectorAll('[data-filter]').forEach(el=>el.onclick=()=>{state.filter=el.dataset.filter;render();});
- document.querySelectorAll('[data-action]').forEach(el=>el.addEventListener('click',async()=>{const action=el.dataset.action,id=el.dataset.id;
+ document.querySelectorAll('[data-action]:not([data-action="block"]):not([data-action="unblock"])').forEach(el=>el.addEventListener('click',async()=>{const action=el.dataset.action,id=el.dataset.id;
   if(action==='logout')logout();
+  if(action==='refresh-blocked'){el.disabled=true;const ok=await refreshBlocked();render();if(ok)toast('Lista de bloqueados actualizada');}
   if(action==='new-project'||action==='new-discussion'){state.page=action==='new-project'?'projects':'discussions';state.composing=true;render();}
   if(action==='cancel-form'){state.composing=false;render();}
   if(action==='refresh'){el.disabled=true;await loadBase();render();toast(state.loadErrors.length?'Actualización incompleta; revisa el aviso de conexión.':'Contenido actualizado');}
@@ -152,4 +212,11 @@ const bind = () => {
  document.querySelector('#profile-form')?.addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);const externalLinks=[['GitHub',f.get('githubLink')],['LinkedIn',f.get('linkedinLink')],['Portfolio',f.get('portfolioLink')]].filter(([,url])=>url).map(([name,url])=>({name,url}));try{state.profile=await api('admin','/api/v1/profile',{method:'PUT',body:JSON.stringify({githubLink:f.get('githubLink')||null,linkedinLink:f.get('linkedinLink')||null,portfolioLink:f.get('portfolioLink')||null,skills:String(f.get('skills')).split(',').map(s=>s.trim()).filter(Boolean),yearsOfExperience:Number(f.get('yearsOfExperience')),level:f.get('level')})});toast('Perfil actualizado');render();}catch(err){toast(err.message,true);}});
  document.querySelector('#follow-form')?.addEventListener('submit',async e=>{e.preventDefault();const f=new FormData(e.currentTarget);try{const response=await api('admin','/api/v1/following',{method:'POST',body:JSON.stringify({target:f.get('target')})});state.following=await api('admin','/api/v1/following');toast(response?.message||'Ahora sigues a este desarrollador');render();}catch(err){toast(err.message,true);}});
 };
+// Delegación global: cubre botones de bloquear/desbloquear renderizados después (modal de chat incluido).
+document.addEventListener('click',async event=>{
+ const button=event.target instanceof Element?event.target.closest('[data-action="block"], [data-action="unblock"]'):null;
+ if(!button)return;
+ event.preventDefault();
+ await handleBlockToggle(button);
+});
 if(state.token){app.innerHTML='<div class="loading">Preparando tu comunidad…</div>';loadBase().then(render);}else renderAuth();
